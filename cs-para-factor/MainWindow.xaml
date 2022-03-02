@@ -1,0 +1,25 @@
+﻿<Window x:Class="ParaFactor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ParaFactor"
+        mc:Ignorable="d"
+        Title="Parallel Factorization" Height="768" Width="1024" FontSize="16" WindowState="Maximized">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="97px"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1*"/>
+        </Grid.ColumnDefinitions>
+        <Button x:Name="buttonGenerate" Content="Generate" HorizontalAlignment="Left" Height="30" Margin="156,36,0,0" VerticalAlignment="Top" Width="108" Padding="1,0,1,1" ScrollViewer.CanContentScroll="True" Click="buttonGenerate_Click"/>
+        <TextBox x:Name="countInput" HorizontalAlignment="Left" Margin="31,36,0,0" Text="16" TextWrapping="NoWrap" VerticalAlignment="Top" Width="120" Height="30" MaxLength="6" HorizontalContentAlignment="Left" VerticalContentAlignment="Top" Padding="2,2,2,0" PreviewTextInput="CountInput_PreviewTextInput" TextChanged="CountInput_TextChanged" Grid.ColumnSpan="2"/>
+        <Button x:Name="buttonFactorize" Content="Factorize" HorizontalAlignment="Left" Height="30" Margin="306,36,0,0" VerticalAlignment="Top" Width="108" Padding="1,0,1,1" Click="buttonFactorize_Click"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <WrapPanel x:Name="wrapPanel" ScrollViewer.VerticalScrollBarVisibility="Disabled"/>
+        </ScrollViewer>
+
+    </Grid>
+</Window>
