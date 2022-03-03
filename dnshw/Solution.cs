@@ -41,33 +41,46 @@ namespace dns_netcore {
 			_cache = new ConcurrentDictionary<string, AddrSubdomainPair>();
 		}
 
-		public async Task<IP4Addr> ResolveRecursive(string domain)
+		public Task<IP4Addr> ResolveRecursive(string domain)
 		{
             //Console.WriteLine($"{domain} cache: {_cache.Count()}");
             string[] domains = domain.Split('.');
 			Array.Reverse(domains);
 
-			AddrSubdomainPair cachedSubdomainServer = FindCachedSubdomain(domains).Result;
+            AddrSubdomainPair cachedSubdomainServer = FindCachedSubdomain(domains).Result;
 
 			IP4Addr res;
 			if (cachedSubdomainServer.DomainCount == 0) {
-                //Console.WriteLine("DomainCount 0");
+				//Console.WriteLine("DomainCount 0");
 				res = dnsClient.GetRootServers()[0];
 			} else {
-				//Console.WriteLine(cachedSubdomainServer.Addr.Result);
-				res = cachedSubdomainServer.Addr.Result;
+                //Console.WriteLine(cachedSubdomainServer.Addr.Result);
+                res = cachedSubdomainServer.Addr.Result;
             }
 
+			if (cachedSubdomainServer.DomainCount == domains.Length) {
+				return cachedSubdomainServer.Addr;
+            }
 
-			for (int i = cachedSubdomainServer.DomainCount; i < domains.Length; ++i) {
-				var t = dnsClient.Resolve(res, domains[i]);
-                string subdomain = string.Join(".", domains.Take(i + 1).Reverse());
-                //Console.WriteLine($"i:{i + 1}");
+			Task<IP4Addr> t = dnsClient.Resolve(res, domains[cachedSubdomainServer.DomainCount]);
+			string subdomain = string.Join(".", domains.Take(cachedSubdomainServer.DomainCount + 1));
+			_cache[subdomain] = new AddrSubdomainPair(t, cachedSubdomainServer.DomainCount + 1);	
+
+
+			for (int i = cachedSubdomainServer.DomainCount + 1; i < domains.Length; ++i) {
+				string d = domains[i];
+				t = t.ContinueWith<Task<IP4Addr>>(task => {
+					return dnsClient.Resolve(task.Result, d);
+				}).Unwrap();
+				subdomain = string.Join(".", domains.Take(i + 1));
 				_cache[subdomain] = new AddrSubdomainPair(t, i + 1);
-				res = await t;
-            }
+			}
+            //Console.WriteLine("Cache:");
+            //foreach (var k in _cache) {
+            //    Console.WriteLine($"{k.Key}, {k.Value}");
+            //}
 
-			return res;
+            return t;
         }
 
 
@@ -77,14 +90,17 @@ namespace dns_netcore {
 			foreach (string subdomain in GenerateSubdomains(domains)) {
 				bool inCache = _cache.TryGetValue(subdomain, out AddrSubdomainPair possibleAddr);
 				if (inCache) {
+				//Console.WriteLine($"subdomain: {subdomain}");
 					if (possibleAddr.IsCompletedSuccessfully) {
 						cachedAddrs.Add(CheckForCachedSubdomain(subdomain, possibleAddr));
                     } else if (possibleAddr.IsCompleted) {
+						//Console.WriteLine($"FindCachedSubdomain: IsCompleted");
 						continue;
                     } else {
 						cachedAddrs.Add(Task.FromResult(possibleAddr));
                     }
-                }
+                    //Console.WriteLine($"FindCachedSubdomain: {subdomain}");
+				}
 			}
 
 			return Task.WhenAll(cachedAddrs).ContinueWith<AddrSubdomainPair>((t) => {
@@ -110,10 +126,13 @@ namespace dns_netcore {
 			bool first = true;
 
 			foreach (string domain in domains) {
-				sb.Append(domain);
-				if (!first) {
-					sb.Append('.');
+				if (first) {
+					sb.Append(domain);
 					first = false;
+				} else {
+					sb.Append('.');
+					sb.Append(domain);
+
 				}
 				yield return sb.ToString();
 			}
