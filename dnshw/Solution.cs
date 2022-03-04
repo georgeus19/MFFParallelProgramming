@@ -54,18 +54,6 @@ namespace dns_netcore {
                 return domain;
             }
 
-            int i = domain.LastIndexOf(resolvedDomainPart);
-            if (domain[i - 1] == '.') {
-                --i;
-            }
-            return domain[..i];
-
-
-
-            if (domain == resolvedDomainPart) {
-                return string.Empty;
-            }
-
             return domain[..(domain.LastIndexOf(resolvedDomainPart) - 1)];
         }
 
@@ -75,7 +63,6 @@ namespace dns_netcore {
             } else {
 				return subdomain + '.' + domain;
             }
-
         }
 
 		public Task<IP4Addr> ResolveRecursive(string domain) {
@@ -83,7 +70,8 @@ namespace dns_netcore {
             AddrSubdomainPair asp = FindCachedSubdomain(domain);
 
 			if (asp.Domain == domain) {
-				return asp.Addr;
+                _cache[asp.Domain] = asp;
+                return asp.Addr;
 			}
 
 			if (asp.Domain == string.Empty) {
@@ -99,7 +87,6 @@ namespace dns_netcore {
 			string domainPartToResolve = ComputeLeftoverDomainPartToResolve(domain, asp.Domain);
 
 			foreach (string subdomain in domainPartToResolve.Split('.').Reverse()) {
-                Console.WriteLine(subdomain);
 				Task<IP4Addr> addr = asp.Addr.ContinueWith((t) => {
 					return _dnsClient.Resolve(t.Result, subdomain);
 				}).Unwrap();
@@ -108,11 +95,11 @@ namespace dns_netcore {
 				_cache[asp.Domain] = asp;
 			}
 
-            Console.WriteLine("Cahce start:");
-            foreach (var k in _cache) {
-                Console.WriteLine($"	Key {k.Key}");
-            }
-            _cache[asp.Domain] = asp;
+            //Console.WriteLine("Cahce start:");
+            //foreach (var k in _cache) {
+            //    Console.WriteLine($"	Key {k.Key}");
+            //}
+            //_cache[asp.Domain] = asp;
 
             return asp.Addr;
 		}
