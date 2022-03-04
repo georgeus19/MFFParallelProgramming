@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Linq;
 
 namespace dns_netcore {
@@ -35,7 +36,6 @@ namespace dns_netcore {
 		private IDNSClient _dnsClient;
 		private ConcurrentDictionary<string, AddrSubdomainPair> _cache;
 		private int _lastUsedRoot = 0;
-		private object _l = new();
 
 		public RecursiveResolver(IDNSClient client)	{
 			this._dnsClient = client;
@@ -43,10 +43,9 @@ namespace dns_netcore {
 		}
 
 		private IP4Addr GetRootServer() {
-			lock(_l) {
-				var roots = _dnsClient.GetRootServers();
-				return roots[++_lastUsedRoot % roots.Count];
-            }
+			var roots = _dnsClient.GetRootServers();
+			Interlocked.Increment(ref _lastUsedRoot);
+			return roots[_lastUsedRoot % roots.Count];
         }
 
 		private string ComputeLeftoverDomainPartToResolve(string domain, string resolvedDomainPart) {
