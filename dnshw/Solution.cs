@@ -7,51 +7,75 @@ using System.Linq;
 
 namespace dns_netcore {
 
-
     struct AddrSubdomainPair {
         public Task<IP4Addr> Addr { get; }
-		public int DomainCount { get; }
-
 		public string Domain { get; }
 
 		public bool IsCompletedSuccessfully => Addr.IsCompletedSuccessfully;
 		public bool IsCompleted => Addr.IsCompleted;
 
-		public AddrSubdomainPair(Task<IP4Addr> addr, int domainCount, string domain) {
+		public AddrSubdomainPair(Task<IP4Addr> addr, string domain) {
 			this.Addr = addr;
-			this.DomainCount = domainCount;
 			this.Domain = domain;
 		}
 
-		public AddrSubdomainPair(IP4Addr addr, int domainCount, string domain) {
+		public AddrSubdomainPair(IP4Addr addr, string domain) {
 			this.Addr = Task.FromResult(addr);
-			this.DomainCount = domainCount;
 			this.Domain = domain;
 		}
 
 		public AddrSubdomainPair() {
 			this.Addr = Task.FromResult(new IP4Addr());
-			this.DomainCount = 0;
 			this.Domain = string.Empty;
 		}
 	}
 
     class RecursiveResolver : IRecursiveResolver
 	{
-		private IDNSClient dnsClient;
+		private IDNSClient _dnsClient;
 		private ConcurrentDictionary<string, AddrSubdomainPair> _cache;
 		private int _lastUsedRoot = 0;
-		public RecursiveResolver(IDNSClient client)
-		{
-			this.dnsClient = client;
+		private object _l = new();
+
+		public RecursiveResolver(IDNSClient client)	{
+			this._dnsClient = client;
 			_cache = new ConcurrentDictionary<string, AddrSubdomainPair>();
 		}
 
-		private IP4Addr OP_LAD_BALANDER() {
+		private IP4Addr GetRootServer() {
+			lock(_l) {
+				var roots = _dnsClient.GetRootServers();
+				return roots[++_lastUsedRoot % roots.Count];
+            }
+        }
 
-			var roots = dnsClient.GetRootServers();
-			return roots[++_lastUsedRoot % roots.Count];
-			
+		private string ComputeLeftoverDomainPartToResolve(string domain, string resolvedDomainPart) {
+            if (resolvedDomainPart == string.Empty) {
+                return domain;
+            }
+
+            int i = domain.LastIndexOf(resolvedDomainPart);
+            if (domain[i - 1] == '.') {
+                --i;
+            }
+            return domain[..i];
+
+
+
+            if (domain == resolvedDomainPart) {
+                return string.Empty;
+            }
+
+            return domain[..(domain.LastIndexOf(resolvedDomainPart) - 1)];
+        }
+
+		private string AddSubdomain(string domain, string subdomain) {
+			if (domain == string.Empty) {
+				return subdomain;
+            } else {
+				return subdomain + '.' + domain;
+            }
+
         }
 
 		public Task<IP4Addr> ResolveRecursive(string domain) {
@@ -63,44 +87,34 @@ namespace dns_netcore {
 			}
 
 			if (asp.Domain == string.Empty) {
-				asp = new AddrSubdomainPair(Task.FromResult(OP_LAD_BALANDER()), 0, string.Empty);
+				asp = new AddrSubdomainPair(Task.FromResult(GetRootServer()), string.Empty);
 			}
 
-            //Console.WriteLine($"asp.Domain {asp.Domain}");
+			//Console.WriteLine($"asp.Domain {asp.Domain}");
 
-			int i = domain.LastIndexOf(asp.Domain);
-			if (i < domain.Length && domain[i - 1] == '.') {
-				--i;
-            }
+			//Console.WriteLine($"needToResolveDomain: '{needToResolveDomain}'");
 
-			string needToResolveDomain = domain.Substring(0, i);
-            //Console.WriteLine($"needToResolveDomain: '{needToResolveDomain}'");
+			string domainToCache = asp.Domain;
 
-			string s = asp.Domain;
-			if (asp.Domain != string.Empty) {
-				s = "." + s;
-			}
-			
-			foreach(string d in needToResolveDomain.Split('.').Reverse()) {
+			string domainPartToResolve = ComputeLeftoverDomainPartToResolve(domain, asp.Domain);
+
+			foreach (string subdomain in domainPartToResolve.Split('.').Reverse()) {
+                Console.WriteLine(subdomain);
 				Task<IP4Addr> addr = asp.Addr.ContinueWith((t) => {
-					return dnsClient.Resolve(t.Result, d);
+					return _dnsClient.Resolve(t.Result, subdomain);
 				}).Unwrap();
-				if (s == string.Empty) {
-					s = d;
-                } else {
-					s = d + '.' + s;
-				}
-				asp = new AddrSubdomainPair(addr, 0, s);
+				domainToCache = AddSubdomain(domainToCache, subdomain);
+				asp = new AddrSubdomainPair(addr, domainToCache);
 				_cache[asp.Domain] = asp;
 			}
 
-   //         Console.WriteLine("Cahce start:");
-			//foreach(var k in _cache) {
-   //             Console.WriteLine($"	Key {k.Key}");
-   //         }
-			//_cache[asp.Domain] = asp;
+            Console.WriteLine("Cahce start:");
+            foreach (var k in _cache) {
+                Console.WriteLine($"	Key {k.Key}");
+            }
+            _cache[asp.Domain] = asp;
 
-			return asp.Addr;
+            return asp.Addr;
 		}
 
 		private AddrSubdomainPair FindCachedSubdomain(string domain) {
@@ -126,37 +140,21 @@ namespace dns_netcore {
 			return new AddrSubdomainPair();
         }
 
-
 		private AddrSubdomainPair CheckForCachedSubdomain(string domain, AddrSubdomainPair addr) {
             //Console.WriteLine($"CheckForCachedSubdomain {domain}");
 			
-			Task<IP4Addr> task = dnsClient.Reverse(addr.Addr.Result).ContinueWith<Task<IP4Addr>>((t) => {
+			Task<IP4Addr> task = _dnsClient.Reverse(addr.Addr.Result).ContinueWith<Task<IP4Addr>>((t) => {
 				if (t.IsCompletedSuccessfully && t.Result == domain) {
 					return addr.Addr;
                 } else {
-                    int dotIndex = domain.IndexOf('.');
-                    if (dotIndex < 0) {
-						var tt = dnsClient.Resolve(OP_LAD_BALANDER(), domain);
-						_cache[domain] = new AddrSubdomainPair(tt, addr.DomainCount, domain);
-						return tt;
-					} else {
-						string subdomain = domain[(dotIndex + 1)..];
-						string firstDomain = domain[..dotIndex];
-						var tt = ResolveRecursive(subdomain).ContinueWith((t) => {
-							return dnsClient.Resolve(t.Result, firstDomain);
-                        }).Unwrap();
-						_cache[domain] = new AddrSubdomainPair(tt, addr.DomainCount, domain);
-						return tt;
-					}
-                    //_cache.Remove(domain, out var _);
-                    //var tt = ResolveRecursive(domain);
-                    //_cache[domain] = new AddrSubdomainPair(tt, addr.DomainCount, domain);
-                    //return tt;
+                    _cache.Remove(domain, out var _);
+                    var tt = ResolveRecursive(domain);
+                    _cache[domain] = new AddrSubdomainPair(tt, domain);
+                    return tt;
                 }
-			}).Unwrap();
+            }).Unwrap();
 
-			return new AddrSubdomainPair(task, addr.DomainCount, domain);
+			return new AddrSubdomainPair(task, domain);
         }
-
     }
 }

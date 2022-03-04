@@ -48,7 +48,7 @@ namespace dns_netcore
 		{
 			Stopwatch stopwatch = Stopwatch.StartNew();
 			var t = resolver.ResolveRecursive(domain);
-            t.Wait();
+            //t.Wait();
             return t.ContinueWith<TestResult>(t => {
 				stopwatch.Stop();
 				return new TestResult(domain, t.Result, stopwatch.ElapsedMilliseconds);
