@@ -66,7 +66,6 @@ namespace dns_netcore {
         }
 
 		public Task<IP4Addr> ResolveRecursive(string domain) {
-            //Console.WriteLine($"ResolveRecursive start: {domain}");
             AddrSubdomainPair asp = FindCachedSubdomain(domain);
 
 			if (asp.Domain == domain) {
@@ -77,10 +76,6 @@ namespace dns_netcore {
 			if (asp.Domain == string.Empty) {
 				asp = new AddrSubdomainPair(Task.FromResult(GetRootServer()), string.Empty);
 			}
-
-			//Console.WriteLine($"asp.Domain {asp.Domain}");
-
-			//Console.WriteLine($"needToResolveDomain: '{needToResolveDomain}'");
 
 			string domainToCache = asp.Domain;
 
@@ -94,24 +89,15 @@ namespace dns_netcore {
 				asp = new AddrSubdomainPair(addr, domainToCache);
 				_cache[asp.Domain] = asp;
 			}
-
-            //Console.WriteLine("Cahce start:");
-            //foreach (var k in _cache) {
-            //    Console.WriteLine($"	Key {k.Key}");
-            //}
-            //_cache[asp.Domain] = asp;
-
-            return asp.Addr;
+            
+			return asp.Addr;
 		}
 
 		private AddrSubdomainPair FindCachedSubdomain(string domain) {
 			int dotIndex;
 			do {
-				//Console.WriteLine($"Query cache for domain: {domain}");
 				bool inCache = _cache.TryGetValue(domain, out AddrSubdomainPair possibleAddr);
 				if (inCache) {
-                    //Console.WriteLine($"subdomain: {subdomain}");
-
                     if (!possibleAddr.IsCompleted) {
                         return possibleAddr;
                     }
@@ -128,7 +114,6 @@ namespace dns_netcore {
         }
 
 		private AddrSubdomainPair CheckForCachedSubdomain(string domain, AddrSubdomainPair addr) {
-            //Console.WriteLine($"CheckForCachedSubdomain {domain}");
 			
 			Task<IP4Addr> task = _dnsClient.Reverse(addr.Addr.Result).ContinueWith<Task<IP4Addr>>((t) => {
 				if (t.IsCompletedSuccessfully && t.Result == domain) {
