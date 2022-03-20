@@ -4,7 +4,7 @@ CFLAGS=-Wall -O3 -std=c++17
 INCLUDE=. ./internal $(TBBROOT)/include
 LDFLAGS=
 LIBS=tbb
-LIBDIRS=$(TBBROOT)/lib
+LIBDIRS=$(TBBROOT)/lib64
 SOURCE=k-means.cpp
 HEADERS=$(shell find . -name '*.hpp')
 EXECUTABLE=./k-means

@@ -2,11 +2,11 @@
 /*
  * K-means Clustering Algorithm
  */
-#include <implementation.hpp>
 
 #include <exception.hpp>
 #include <stopwatch.hpp>
 #include <interface.hpp>
+#include <implementation.hpp>
 
 #include <vector>
 #include <iostream>

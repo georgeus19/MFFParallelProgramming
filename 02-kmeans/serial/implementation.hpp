@@ -1,9 +1,6 @@
 #ifndef KMEANS_SERIAL_IMPLEMENTATION_HPP
 #define KMEANS_SERIAL_IMPLEMENTATION_HPP
 
-#include <interface.hpp>
-#include <exception.hpp>
-
 
 
 template<typename POINT = point_t, typename ASGN = std::uint8_t, bool DEBUG = false>
