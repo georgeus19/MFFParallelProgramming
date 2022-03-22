@@ -44,10 +44,6 @@ struct CentroidUpdate {
 
 };
 
-// CentroidUpdate operator+(const CentroidUpdate& a, const CentroidUpdate& b) {
-// 	return CentroidUpdate{a.point.x + b.point.x, a.point.y + b.point.y, a.count + b.count};
-// }
-
 template <typename T>
 class Matrix {
 private:
@@ -120,6 +116,11 @@ private:
 	static constexpr size_t _pointsPerTask = 1024;
  
 	Matrix<CentroidUpdate<POINT>> centroidUpdates;
+	std::vector<uint8_t> _assignments;
+	std::vector<POINT> sums;
+	std::vector<std::size_t> counts;
+
+
 
 	static coord_t distance(const POINT &point, const POINT &centroid) {
 		std::int64_t dx = (std::int64_t)point.x - (std::int64_t)centroid.x;
@@ -148,6 +149,13 @@ private:
 		}
 	}
 
+	void computeNearestCentroidsA(std::size_t taskId, const std::vector<POINT>& points, const std::vector<POINT>& centroids, std::size_t from, std::size_t to) {
+		for (std::size_t pointIndex = from; pointIndex != to; ++pointIndex) {
+			std::size_t nearest_centroid = getNearestCluster(points[pointIndex], centroids);
+			_assignments[pointIndex] = nearest_centroid;
+		}
+	}
+
 public:
 	/*
 	 * \brief Perform the initialization of the functor (e.g., allocate memory buffers).
@@ -157,6 +165,9 @@ public:
 	 */
 	virtual void init(std::size_t points, std::size_t k, std::size_t iters) {
 		centroidUpdates.resize((points / _pointsPerTask) + 1, 256, k);
+		_assignments.resize(points);
+		sums.resize(k);
+		counts.resize(k);
 	}
 
 
@@ -183,6 +194,11 @@ public:
 		// Run the k-means refinements
 		while (iters > 0) {
 			--iters;
+
+			for (std::size_t i = 0; i < k; ++i) {
+				sums[i].x = sums[i].y = 0;
+				counts[i] = 0;
+			}
 
 			if (iters == 0) {
 				for (std::size_t i = 0; i < points.size(); ++i) {
@@ -226,12 +242,28 @@ public:
 				}
 				nearestCentroidTasks.run([=, &points, &centroids](){
 					computeNearestCentroids(taskId, points, centroids, rangeStart, rangeEnd);
+					// computeNearestCentroidsA(taskId, points, centroids, rangeStart, rangeEnd);
+					
 				});
 				// computeNearestCentroids(taskId, points, centroids, rangeStart, rangeEnd);
 				++taskId;
 
 			}
 			nearestCentroidTasks.wait();
+
+			// for (std::size_t i = 0; i < _assignments.size(); ++i) {
+			// 	sums[_assignments[i]].x += points[i].x;
+			// 	sums[_assignments[i]].y += points[i].y;
+			// 	++counts[_assignments[i]];
+			// }
+
+			// for (std::size_t i = 0; i < k; ++i) {
+			// 	if (counts[i] == 0) continue;	// If the cluster is empty, keep its previous centroid.
+			// 	centroids[i].x = sums[i].x / (std::int64_t)counts[i];
+			// 	centroids[i].y = sums[i].y / (std::int64_t)counts[i];
+			// }
+
+
 
 			for(std::size_t centroidIndex = 0; centroidIndex < centroidUpdates.columnCount(); ++centroidIndex) {
 				std::int64_t x = 0;
