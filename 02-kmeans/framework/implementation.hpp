@@ -8,6 +8,10 @@
 #include "oneapi/tbb/blocked_range.h"
 #include "oneapi/tbb/parallel_reduce.h"
 #include "oneapi/tbb/partitioner.h"
+#include "oneapi/tbb/concurrent_vector.h"
+#include "oneapi/tbb/task_group.h"
+#include <sstream>
+#include <thread>
 
 template <typename POINT = point_t>
 struct CentroidUpdate {
@@ -29,7 +33,7 @@ struct CentroidUpdate {
 	void update(const POINT& p) {
 		point.x += p.x;
 		point.y += p.y;
-		++count;
+		count += 1;
 	}
 
 	void reset() {
@@ -158,8 +162,10 @@ class NearestCentroidBody{
 private:
 	const std::vector<POINT>* _points;
 	const std::vector<POINT>* _centroids;
+	const std::vector<uint8_t>* _assignment;
 	Matrix<CentroidUpdate<POINT>>* _centroidUpdates;
 	const std::size_t _pointsPerTask;
+
 
 	typedef typename POINT::coord_t coord_t;
 
@@ -206,12 +212,69 @@ public:
 		assert(range.size() == _pointsPerTask);
 		assert(taskIndex(range.begin()) == taskIndex(range.end() - 1));
 		assert(taskIndex(range.begin()) + 1 == taskIndex(range.end()));
+		// auto this_id = std::this_thread::get_id();
+		// std::stringstream s;
+		// s << this_id;
+		// std::cout << s.str() + "\n";
 		for (auto pointIndex = range.begin(); pointIndex != range.end(); ++pointIndex) {
 			size_t nearest_centroid = getNearestCluster((*_points)[pointIndex], *_centroids);
+			_centroidUpdates->at(task, nearest_centroid).update((*_points)[pointIndex]);
+		}
+	}
+};
+
+template <typename Range, typename POINT = point_t>
+class ConcurentNearestCentroidBody{
+private:
+	const std::vector<POINT>* _points;
+	const std::vector<POINT>* _centroids;
+	oneapi::tbb::concurrent_vector<CentroidUpdate<POINT>>* _newCentroids;
+
+	typedef typename POINT::coord_t coord_t;
+
+	static coord_t distance(const POINT &point, const POINT &centroid) {
+		std::int64_t dx = (std::int64_t)point.x - (std::int64_t)centroid.x;
+		std::int64_t dy = (std::int64_t)point.y - (std::int64_t)centroid.y;
+		return (coord_t)(dx*dx + dy*dy);
+	}
+
+	static std::size_t getNearestCluster(const POINT &point, const std::vector<POINT> &centroids) {
+		coord_t minDist = distance(point, centroids[0]);
+		std::size_t nearest = 0;
+		for (std::size_t i = 1; i < centroids.size(); ++i) {
+			coord_t dist = distance(point, centroids[i]);
+			if (dist < minDist) {
+				minDist = dist;
+				nearest = i;
+			}
+		}
+
+		return nearest;
+	}
+
+public:
+
+	ConcurentNearestCentroidBody(const ConcurentNearestCentroidBody& b)
+		: _points(b._points), _centroids(b._centroids), _newCentroids(b._newCentroids) {}
+
+	ConcurentNearestCentroidBody(
+		const std::vector<POINT>* points,
+		const std::vector<POINT>* centroids,
+		oneapi::tbb::concurrent_vector<CentroidUpdate<POINT>>* newCentroids)
+		: _points(points), _centroids(centroids), _newCentroids(newCentroids) {}
+
+	~ConcurentNearestCentroidBody() {}
+
+	void operator()(Range& range) const {
+		for (auto pointIndex = range.begin(); pointIndex != range.end(); ++pointIndex) {
+			size_t nearest_centroid = getNearestCluster((*_points)[pointIndex], *_centroids);
+			(*_newCentroids)[nearest_centroid].update((*_points)[pointIndex]);
 			// _centroidUpdates->at(task, nearest_centroid).update((*_points)[pointIndex]);
 		}
 	}
 };
+
+
 
 template <typename Range, typename POINT = point_t>
 class ResetCentroidUpdatesBody{
@@ -243,12 +306,9 @@ class KMeans : public IKMeans<POINT, ASGN, DEBUG> {
 private:
 	typedef typename POINT::coord_t coord_t;
 
-	static constexpr size_t _pointsPerTask = 64;
+	static constexpr size_t _pointsPerTask = 1024;
  
-	std::vector<POINT> sums;
-	std::vector<std::size_t> counts;
 	Matrix<CentroidUpdate<POINT>> centroidUpdates;
-
 
 	static coord_t distance(const POINT &point, const POINT &centroid) {
 		std::int64_t dx = (std::int64_t)point.x - (std::int64_t)centroid.x;
@@ -270,6 +330,13 @@ private:
 		return nearest;
 	}
 
+	void computeNearestCentroids(std::size_t taskId, const std::vector<POINT>& points, const std::vector<POINT>& centroids, std::size_t from, std::size_t to) {
+		for (std::size_t pointIndex = from; pointIndex != to; ++pointIndex) {
+			std::size_t nearest_centroid = getNearestCluster(points[pointIndex], centroids);
+			centroidUpdates.at(taskId, nearest_centroid).update(points[pointIndex]);
+		}
+	}
+
 public:
 	/*
 	 * \brief Perform the initialization of the functor (e.g., allocate memory buffers).
@@ -278,16 +345,7 @@ public:
 	 * \param iters Number of refining iterations.
 	 */
 	virtual void init(std::size_t points, std::size_t k, std::size_t iters) {
-		sums.resize(k);
-		counts.resize(k);
 		centroidUpdates.resize((points / _pointsPerTask) + 1, 256, k);
-		// std::cout << "Task Count: " << (points / _pointsPerTask) + 1 << std::endl;
-		// for (std::size_t rowIndex = 0; rowIndex < centroidUpdates.rowCount(); ++rowIndex) {
-		// 	for (std::size_t columnIndex = 0; columnIndex < centroidUpdates.columnCount(); ++columnIndex) {
-		// 		centroidUpdates.at(rowIndex, columnIndex).reset();
-		// 	}
-		// }
-
 	}
 
 
@@ -319,26 +377,28 @@ public:
 				for (std::size_t i = 0; i < points.size(); ++i) {
 					std::size_t nearest = getNearestCluster(points[i], centroids);
 					assignments[i] = (ASGN)nearest;
-					// sums[nearest].x += points[i].x;
-					// sums[nearest].y += points[i].y;
-					// ++counts[nearest];
 				}
 			}
 
-			// Prepare empty tmp fields.
-			for (std::size_t i = 0; i < k; ++i) {
-				sums[i].x = sums[i].y = 0;
-				counts[i] = 0;
-			}
 
-			// for (std::size_t rowIndex = 0; rowIndex < centroidUpdates.rowCount(); ++rowIndex) {
-			// 	for (std::size_t columnIndex = 0; columnIndex < centroidUpdates.columnCount(); ++columnIndex) {
-			// 		centroidUpdates.at(rowIndex, columnIndex).reset();
-			// 	}
+			// Prepare empty tmp fields.
+			// for (std::size_t i = 0; i < k; ++i) {
+			// 	sums[i].x = sums[i].y = 0;
+			// 	counts[i] = 0;
 			// }
 
-			ResetCentroidUpdatesBody<oneapi::tbb::blocked_range<std::size_t>> resetCentroidUpdates{&centroidUpdates};
-			const std::size_t rowsPerTask = 1024;
+			// for(std::size_t i = 0; i < k; ++i) {
+			// 	_newCentroids[i].reset();
+			// }
+			
+			for (std::size_t rowIndex = 0; rowIndex < centroidUpdates.rowCount(); ++rowIndex) {
+				for (std::size_t columnIndex = 0; columnIndex < centroidUpdates.columnCount(); ++columnIndex) {
+					centroidUpdates.at(rowIndex, columnIndex).reset();
+				}
+			}
+
+			// ResetCentroidUpdatesBody<oneapi::tbb::blocked_range<std::size_t>> resetCentroidUpdates{&centroidUpdates};
+			// const std::size_t rowsPerTask = 1024;
 			// size_t resetRangeEnd = 0;
 			// for (std::size_t rowIndex = 0; rowIndex < centroidUpdates.rowCount(); rowIndex += rowsPerTask) {
 			// 	resetRangeEnd = rowIndex + rowsPerTask;
@@ -351,10 +411,28 @@ public:
 
 			// }
 
-			oneapi::tbb::blocked_range<std::size_t> resetRange{0, centroidUpdates.rowCount(), rowsPerTask};
-			oneapi::tbb::affinity_partitioner partitioner{}; 
-			oneapi::tbb::parallel_for(resetRange, resetCentroidUpdates, partitioner);
+			// oneapi::tbb::blocked_range<std::size_t> resetRange{0, centroidUpdates.rowCount(), rowsPerTask};
+			// oneapi::tbb::affinity_partitioner partitioner{}; 
+			// oneapi::tbb::parallel_for(resetRange, resetCentroidUpdates, partitioner);
 			
+
+			oneapi::tbb::task_group nearestCentroidTasks{};
+
+			std::size_t taskId = 0;
+			for (std::size_t rangeStart = 0; rangeStart < points.size(); rangeStart += _pointsPerTask) {
+				std::size_t rangeEnd = rangeStart + _pointsPerTask;
+				if (rangeEnd > points.size()) {
+					rangeEnd = points.size();
+				}
+				nearestCentroidTasks.run([=, &points, &centroids](){
+					computeNearestCentroids(taskId, points, centroids, rangeStart, rangeEnd);
+				});
+				// computeNearestCentroids(taskId, points, centroids, rangeStart, rangeEnd);
+				++taskId;
+
+			}
+
+			nearestCentroidTasks.wait();
 
 			// NearestCentroidBody<oneapi::tbb::blocked_range<std::size_t>> nearestCentroid{&points, &centroids, &centroidUpdates, _pointsPerTask};
 			// size_t rangeEnd = 0;
@@ -363,15 +441,21 @@ public:
 			// 	if (rangeEnd > points.size()) {
 			// 		rangeEnd = points.size();
 			// 	}
+
+			// 	// computeNearestCentroids(i / _pointsPerTask, points, centroids, i, rangeEnd);
 			// 	oneapi::tbb::blocked_range<std::size_t> range{i, rangeEnd, _pointsPerTask};
 			// 	nearestCentroid(range);
 			// }
-			NearestCentroidBody<AlignedRange<std::size_t>> nearestCentroid{&points, &centroids, &centroidUpdates, _pointsPerTask};
-			oneapi::tbb::simple_partitioner simplePartitioner{};
-			AlignedRange<std::size_t> nearestCentroidRange{0, points.size(), _pointsPerTask};
-			oneapi::tbb::parallel_for(nearestCentroidRange, nearestCentroid, simplePartitioner);
+
+			// NearestCentroidBody<AlignedRange<std::size_t>> nearestCentroid{&points, &centroids, &centroidUpdates, _pointsPerTask};
+			// oneapi::tbb::simple_partitioner simplePartitioner{};
+			// AlignedRange<std::size_t> nearestCentroidRange{0, points.size(), _pointsPerTask};
+			// oneapi::tbb::parallel_for(nearestCentroidRange, nearestCentroid, simplePartitioner);
 
 
+			// ConcurentNearestCentroidBody<oneapi::tbb::blocked_range<std::size_t>> nearestCentroid{&points, &centroids, &_newCentroids};
+			// oneapi::tbb::blocked_range<std::size_t> nearestCentroidRange{0, points.size(), _pointsPerTask};
+			// oneapi::tbb::parallel_for(nearestCentroidRange, nearestCentroid);
 
 			
 			// oneapi::tbb::blocked_range<std::size_t> mergeRange{0, centroidUpdates.rowCount(), rowsPerTask};
@@ -392,22 +476,37 @@ public:
 			// }, [](const CentroidUpdate& a, const CentroidUpdate& b) {
 			// 	return a + b;
 			// });
+
+
+			// for(std::size_t i = 0; i < k; ++i) {
+			// 	if (_newCentroids[i].count == 0) continue;
+
+			// 	centroids[i].x = _newCentroids[i].point.x / _newCentroids[i].count;
+			// 	centroids[i].y = _newCentroids[i].point.y / _newCentroids[i].count;
+			// }
+
+			
 			
 			for(std::size_t centroidIndex = 0; centroidIndex < centroidUpdates.columnCount(); ++centroidIndex) {
-
+				std::int64_t x = 0;
+				std::int64_t y = 0;
+				std::int64_t count = 0;
 				for(std::size_t taskIndex = 0; taskIndex < centroidUpdates.rowCount(); ++taskIndex) {
-					sums[centroidIndex].x += centroidUpdates.at(taskIndex, centroidIndex).point.x;
-					sums[centroidIndex].y += centroidUpdates.at(taskIndex, centroidIndex).point.y;
-					counts[centroidIndex] += centroidUpdates.at(taskIndex, centroidIndex).count;
+					x += centroidUpdates.at(taskIndex, centroidIndex).point.x;
+					y += centroidUpdates.at(taskIndex, centroidIndex).point.y;
+					count += centroidUpdates.at(taskIndex, centroidIndex).count;
+
 				}
 
-				if (counts[centroidIndex] > 0) {
-					centroids[centroidIndex].x = sums[centroidIndex].x / counts[centroidIndex];
-					centroids[centroidIndex].y = sums[centroidIndex].y / counts[centroidIndex];
+				if (count > 0) {
+					centroids[centroidIndex].x = x / (std::int64_t)count;
+					centroids[centroidIndex].y = y / (std::int64_t)count;
 
 				}
 			}
 		
+
+
 		}
 	}
 };
