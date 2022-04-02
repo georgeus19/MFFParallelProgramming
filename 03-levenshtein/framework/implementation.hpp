@@ -52,7 +52,6 @@ private:
 		std::size_t iterCount = a.size() + b.size() - 1;
 		for(std::size_t i = 0; i < iterCount; ++i) {
 
-			// std::cout << std::endl;
 			std::tie(currentStripeStart, currentStripeEnd) = getCurrentStripeRange(a.size(), b.size(), i, currentStripeStart, currentStripeEnd);
 			bool lastTriangle = i >= b.size();
 			_currentStripe[0] = i + 2;
@@ -60,7 +59,6 @@ private:
 				_currentStripe[currentStripeEnd] = _currentStripe[0];
 			}
 
-			// std::cout << "STRIPE " << i << " from " << currentStripeStart << " to " << currentStripeEnd << std::endl;
 			#pragma omp parallel for
 			for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
 				C aChar = 0;
@@ -69,37 +67,13 @@ private:
 				} else {
 					aChar = a[currentStripeEnd - currentStripeIndex - 1];
 				}
-				// std::cout << "Comparing "
-				//  << (char)aChar << " and "
-				//  << (char)b[currentStripeIndex - 1];
-
 				DIST substitutionCost = (b[currentStripeIndex - 1] == aChar) ? 0 : 1;
 				_currentStripe[currentStripeIndex] = std::min<DIST>({
 					_previousStripe[currentStripeIndex] + (DIST)1, 
 					_previousStripe[currentStripeIndex - 1] + (DIST)1,  
 					_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
 				});
-				// std::cout << " _currentStripe[currentStripeIndex] " << _currentStripe[currentStripeIndex] << std::endl;
 			}
-
-			// std::cout << "CURRENT:" << std::endl;
-			// for(std::size_t i = currentStripeStart; i < currentStripeEnd; ++i) {
-			// 	std::cout << _currentStripe[i] << " ";
-			// }
-			// std::cout << std::endl;
-
-			// std::cout << "PREVIOUS:" << std::endl;
-			// for(std::size_t i = currentStripeStart - 1; i < currentStripeEnd; ++i) {
-			// 	std::cout << _previousStripe[i] << " ";
-			// }
-			// std::cout << std::endl;
-
-			// std::cout << "PREVIOUS PREVIOUS:" << std::endl;
-			// for(std::size_t i = currentStripeStart - 1; i < currentStripeEnd - 1; ++i) {
-			// 	std::cout << _previousPreviousStripe[i] << " ";
-			// }
-			// std::cout << std::endl;
-			// std::cout << std::endl;
 
 			std::swap(_currentStripe, _previousPreviousStripe);
 			std::swap(_previousStripe, _previousPreviousStripe);
