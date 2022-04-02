@@ -5,13 +5,15 @@ LDFLAGS=
 LIBS=
 LIBDIRS=
 SOURCE=levenshtein.cpp
+MYSOURCE=test.cpp
 HEADERS=$(shell find . -name '*.hpp')
 EXECUTABLE=./levenshtein
+MYEXECUTABLE=./test
 
 
 .PHONY: all clear clean purge
 
-all: $(EXECUTABLE)
+all: $(EXECUTABLE) $(MYEXECUTABLE)
 
 
 
@@ -20,6 +22,10 @@ all: $(EXECUTABLE)
 $(EXECUTABLE): $(SOURCE) $(HEADERS)
 	@$(CPP) $(CFLAGS) $(addprefix -I,$(INCLUDE)) $(LDFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS)) $< -o $@
 
+
+
+$(MYEXECUTABLE): $(MYSOURCE) $(HEADERS)
+	@$(CPP) $(CFLAGS) $(addprefix -I,$(INCLUDE)) $(LDFLAGS) $(addprefix -L,$(LIBDIRS)) $(addprefix -l,$(LIBS)) $< -o $@
 
 
 # Cleaning Stuff
