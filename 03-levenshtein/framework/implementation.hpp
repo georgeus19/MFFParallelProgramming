@@ -6,6 +6,7 @@
 #include <iostream>
 #include <tuple>
 #include <cassert>
+#include <omp.h>
 
 template<typename C = char, typename DIST = std::size_t, bool DEBUG = false>
 class EditDistance : public IEditDistance<C, DIST, DEBUG> {
@@ -59,7 +60,11 @@ private:
 				_currentStripe[currentStripeEnd] = _currentStripe[0];
 			}
 
-			#pragma omp parallel for
+
+			// std::size_t chunkSize =  64 + (currentStripeEnd - currentStripeStart) / 32;
+			// #pragma omp parallel for schedule(static, chunkSize)
+			omp_set_num_threads(16); 
+			#pragma omp parallel for schedule(static) 
 			for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
 				C aChar = 0;
 				if (lastTriangle) {
@@ -140,12 +145,15 @@ DIST lev3T(const std::vector<C>& a, const std::vector<C>& b) { // a.len <= b.len
 				_currentStripe[currentStripeEnd] = _currentStripe[0];
 			}
 
-			// #pragma omp parallel for 
 			std::size_t blockSize = 256;
-			std::size_t blockCount = (currentStripeEnd - currentStripeStart) / blockSize;
-			for (std::size_t block = currentStripeStart; block < blockCount; block += blockSize) {
+			#pragma omp parallel for 
+			for (std::size_t block = currentStripeStart; block < currentStripeEnd; block += blockSize) {
+				std::size_t end = block + blockSize;
+				if (end > currentStripeEnd) {
+					end = currentStripeEnd;
+				}
 
-				for(std::size_t currentStripeIndex = block; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
+				for(std::size_t currentStripeIndex = block; currentStripeIndex < end; ++currentStripeIndex) {
 					C aChar = 0;
 					if (lastTriangle) {
 						aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
