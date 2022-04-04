@@ -1,0 +1,3 @@
+Spark master IP: 10.101.54.115
+starting org.apache.spark.deploy.master.Master, logging to /mnt/2/log/spark-hrubykr-org.apache.spark.deploy.master.Master-1-w201.out
+tail: option used in invalid context -- 7

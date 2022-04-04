@@ -1,0 +1,2 @@
+Spark master IP: 10.101.54.115
+ch-run[1925647]: error: can't bind: source not found: /home/hrubykr/spark/log (ch_core.c:103)
