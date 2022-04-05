@@ -63,28 +63,90 @@ private:
 
 			// std::size_t chunkSize =  64 + (currentStripeEnd - currentStripeStart) / 32;
 			// #pragma omp parallel for schedule(static, chunkSize)
-			omp_set_num_threads(16); 
-			#pragma omp parallel for schedule(static) 
-			for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
-				C aChar = 0;
-				if (lastTriangle) {
-					aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-				} else {
-					aChar = a[currentStripeEnd - currentStripeIndex - 1];
+			std::size_t innerLoopIterCount = currentStripeEnd - currentStripeStart;
+			std::size_t threadCount = std::min<std::size_t>(innerLoopIterCount / 4269, 32);
+			
+			std::size_t wtf;
+
+			if (lastTriangle) {
+						wtf = a.size() + currentStripeStart - 1;
+					} else {
+						wtf = currentStripeEnd - 1;
+					}
+			if (threadCount < 2) {
+
+
+				for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
+					C aChar = a[wtf - currentStripeIndex];
+					// if (lastTriangle) {
+					// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
+					// } else {
+					// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
+					// }
+					DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
+
+					_currentStripe[currentStripeIndex] = std::min<DIST>(
+						std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
+						_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
+					);
+					// _currentStripe[currentStripeIndex] = std::min<DIST>({
+					// 	_previousStripe[currentStripeIndex] + (DIST)1, 
+					// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
+					// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
+					// });
 				}
-				DIST substitutionCost = (b[currentStripeIndex - 1] == aChar) ? 0 : 1;
-				_currentStripe[currentStripeIndex] = std::min<DIST>({
-					_previousStripe[currentStripeIndex] + (DIST)1, 
-					_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-					_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-				});
+			} else {
+				omp_set_num_threads(threadCount); 
+				#pragma omp parallel for schedule(static) 
+				for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
+					C aChar = a[wtf - currentStripeIndex];
+					// C aChar = 0;
+					// if (lastTriangle) {
+					// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
+					// } else {
+					// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
+					// }
+					DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
+
+					_currentStripe[currentStripeIndex] = std::min<DIST>(
+						std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
+						_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
+					);
+					// _currentStripe[currentStripeIndex] = std::min<DIST>({
+					// 	_previousStripe[currentStripeIndex] + (DIST)1, 
+					// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
+					// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
+					// });
+				}
+
 			}
+
 
 			std::swap(_currentStripe, _previousPreviousStripe);
 			std::swap(_previousStripe, _previousPreviousStripe);
 		}
 		return _previousStripe[currentStripeStart];
 	}
+
+	// void ComputeOneLevStep() {
+	// 	C aChar = 0;
+	// 	// if (lastTriangle) {
+	// 	// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
+	// 	// } else {
+	// 	// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
+	// 	// }
+	// 	DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
+
+	// 	// _currentStripe[currentStripeIndex] = std::min<DIST>(
+	// 	// 	std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
+	// 	// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
+	// 	// );
+	// 	// _currentStripe[currentStripeIndex] = std::min<DIST>({
+	// 	// 	_previousStripe[currentStripeIndex] + (DIST)1, 
+	// 	// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
+	// 	// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
+	// 	// });
+	// }
 
 	std::tuple<std::size_t, std::size_t> getCurrentStripeRange(std::size_t aLen, std::size_t bLen, std::size_t i, std::size_t currentStripeStart, std::size_t currentStripeEnd) {
 		if (i < aLen) {
