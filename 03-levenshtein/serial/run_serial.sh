@@ -1,8 +1,8 @@
-echo "Building"
-srun -p mpi-homo-short -A nprg042s make clean
-echo "Cleaned"
-srun -p mpi-homo-short -A nprg042s make
-echo "Running"
+# echo "Building"
+# srun -p mpi-homo-short -A nprg042s make clean
+# echo "Cleaned"
+# srun -p mpi-homo-short -A nprg042s make
+# echo "Running"
 
 echo "--1"
 srun -p mpi-homo-short -A nprg042s ./levenshtein ../data/01-32k.A ../data/01-32k.B

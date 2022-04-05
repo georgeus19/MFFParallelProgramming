@@ -20,6 +20,8 @@ public:
 		_currentStripe.resize((std::size_t)std::max<DIST>(len1, len2) + 2);
 		_previousStripe.resize((std::size_t)std::max<DIST>(len1, len2) + 2);
 		_previousPreviousStripe.resize((std::size_t)std::max<DIST>(len1, len2) + 2);
+		_availableCores = (std::size_t)omp_get_num_procs();
+
 	}
 
 	/*
@@ -30,10 +32,8 @@ public:
 	virtual DIST compute(const std::vector<C> &str1, const std::vector<C> &str2) {
 		if (str1.size() <= str2.size()) {
 			return lev(str1, str2);
-			// return lev3T(str1, str2);
 		} else {
 			return lev(str2, str1);
-			// return lev3T(str2, str1);
 		}
 	}
 
@@ -42,6 +42,7 @@ private:
 	std::vector<DIST> _currentStripe;
 	std::vector<DIST> _previousStripe;
 	std::vector<DIST> _previousPreviousStripe;
+	std::size_t _availableCores;
 
 	DIST lev(const std::vector<C>& a, const std::vector<C>& b) { // a.len <= b.len
 		std::size_t currentStripeStart = 1;
@@ -55,72 +56,32 @@ private:
 
 			std::tie(currentStripeStart, currentStripeEnd) = getCurrentStripeRange(a.size(), b.size(), i, currentStripeStart, currentStripeEnd);
 			bool lastTriangle = i >= b.size();
-			_currentStripe[0] = i + 2;
+			_currentStripe[currentStripeStart - 1] = i + 2;
 			if (currentStripeEnd < _currentStripe.size()) {
-				_currentStripe[currentStripeEnd] = _currentStripe[0];
+				_currentStripe[currentStripeEnd] = _currentStripe[currentStripeStart - 1];
 			}
 
-
-			// std::size_t chunkSize =  64 + (currentStripeEnd - currentStripeStart) / 32;
-			// #pragma omp parallel for schedule(static, chunkSize)
-			std::size_t innerLoopIterCount = currentStripeEnd - currentStripeStart;
-			std::size_t threadCount = std::min<std::size_t>(innerLoopIterCount / 4269, 32);
-			
-			std::size_t wtf;
+			std::size_t aOffset;
 
 			if (lastTriangle) {
-						wtf = a.size() + currentStripeStart - 1;
-					} else {
-						wtf = currentStripeEnd - 1;
-					}
+				aOffset = a.size() + currentStripeStart - 1;
+			} else {
+				aOffset = currentStripeEnd - 1;
+			}
+
+			std::size_t innerLoopIterCount = currentStripeEnd - currentStripeStart;
+			std::size_t threadCount = std::min<std::size_t>(innerLoopIterCount / 1500, _availableCores);
 			if (threadCount < 2) {
-
-
 				for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
-					C aChar = a[wtf - currentStripeIndex];
-					// if (lastTriangle) {
-					// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-					// } else {
-					// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
-					// }
-					DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
-
-					_currentStripe[currentStripeIndex] = std::min<DIST>(
-						std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
-						_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
-					);
-					// _currentStripe[currentStripeIndex] = std::min<DIST>({
-					// 	_previousStripe[currentStripeIndex] + (DIST)1, 
-					// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-					// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-					// });
+					oneLevStep(a, b, currentStripeIndex, aOffset);
 				}
 			} else {
 				omp_set_num_threads(threadCount); 
-				#pragma omp parallel for schedule(static) 
+				#pragma omp parallel for schedule(static)
 				for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
-					C aChar = a[wtf - currentStripeIndex];
-					// C aChar = 0;
-					// if (lastTriangle) {
-					// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-					// } else {
-					// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
-					// }
-					DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
-
-					_currentStripe[currentStripeIndex] = std::min<DIST>(
-						std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
-						_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
-					);
-					// _currentStripe[currentStripeIndex] = std::min<DIST>({
-					// 	_previousStripe[currentStripeIndex] + (DIST)1, 
-					// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-					// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-					// });
+					oneLevStep(a, b, currentStripeIndex, aOffset);
 				}
-
 			}
-
 
 			std::swap(_currentStripe, _previousPreviousStripe);
 			std::swap(_previousStripe, _previousPreviousStripe);
@@ -128,25 +89,15 @@ private:
 		return _previousStripe[currentStripeStart];
 	}
 
-	// void ComputeOneLevStep() {
-	// 	C aChar = 0;
-	// 	// if (lastTriangle) {
-	// 	// 	aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-	// 	// } else {
-	// 	// 	aChar = a[currentStripeEnd - currentStripeIndex - 1];
-	// 	// }
-	// 	DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != aChar);// ? 0 : 1;
+	void oneLevStep(const std::vector<C>& a, const std::vector<C>& b, std::size_t currentStripeIndex, std::size_t aOffset) {
 
-	// 	// _currentStripe[currentStripeIndex] = std::min<DIST>(
-	// 	// 	std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
-	// 	// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
-	// 	// );
-	// 	// _currentStripe[currentStripeIndex] = std::min<DIST>({
-	// 	// 	_previousStripe[currentStripeIndex] + (DIST)1, 
-	// 	// 	_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-	// 	// 	_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-	// 	// });
-	// }
+		DIST substitutionCost = (DIST)(b[currentStripeIndex - 1] != a[aOffset - currentStripeIndex]);
+
+		_currentStripe[currentStripeIndex] = std::min<DIST>(
+			std::min<DIST>(_previousStripe[currentStripeIndex], _previousStripe[currentStripeIndex - 1]) + 1,
+			_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost
+		);
+	}
 
 	std::tuple<std::size_t, std::size_t> getCurrentStripeRange(std::size_t aLen, std::size_t bLen, std::size_t i, std::size_t currentStripeStart, std::size_t currentStripeEnd) {
 		if (i < aLen) {
@@ -160,114 +111,6 @@ private:
 		return {++currentStripeStart, currentStripeEnd};
 	}
 
-DIST lev3T(const std::vector<C>& a, const std::vector<C>& b) { // a.len <= b.len
-		std::size_t currentStripeStart = 1;
-		std::size_t currentStripeEnd = 1;
-
-		_previousStripe[0] = 1;
-		_previousStripe[1] = 1;
-
-		std::size_t iterCount = a.size() + b.size() - 1;
-		std::size_t i = 0;
-		for(; i < 1000; ++i) {
-
-			std::tie(currentStripeStart, currentStripeEnd) = getCurrentStripeRange(a.size(), b.size(), i, currentStripeStart, currentStripeEnd);
-			bool lastTriangle = i >= b.size();
-			if (!lastTriangle) {
-				_currentStripe[0] = i + 2;
-				_currentStripe[currentStripeEnd] = _currentStripe[0];
-			}
-
-			for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
-				C aChar = 0;
-				if (lastTriangle) {
-					aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-				} else {
-					aChar = a[currentStripeEnd - currentStripeIndex - 1];
-				}
-
-				DIST substitutionCost = (b[currentStripeIndex - 1] == aChar) ? 0 : 1;
-				_currentStripe[currentStripeIndex] = std::min<DIST>({
-					_previousStripe[currentStripeIndex] + (DIST)1, 
-					_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-					_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-				});
-			}
-
-			std::swap(_currentStripe, _previousPreviousStripe);
-			std::swap(_previousStripe, _previousPreviousStripe);
-		}
-
-		for(; i < iterCount - 1000; ++i) {
-
-			std::tie(currentStripeStart, currentStripeEnd) = getCurrentStripeRange(a.size(), b.size(), i, currentStripeStart, currentStripeEnd);
-			bool lastTriangle = i >= b.size();
-			if (!lastTriangle) {
-				_currentStripe[0] = i + 2;
-				_currentStripe[currentStripeEnd] = _currentStripe[0];
-			}
-
-			std::size_t blockSize = 256;
-			#pragma omp parallel for 
-			for (std::size_t block = currentStripeStart; block < currentStripeEnd; block += blockSize) {
-				std::size_t end = block + blockSize;
-				if (end > currentStripeEnd) {
-					end = currentStripeEnd;
-				}
-
-				for(std::size_t currentStripeIndex = block; currentStripeIndex < end; ++currentStripeIndex) {
-					C aChar = 0;
-					if (lastTriangle) {
-						aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-					} else {
-						aChar = a[currentStripeEnd - currentStripeIndex - 1];
-					}
-
-					DIST substitutionCost = (b[currentStripeIndex - 1] == aChar) ? 0 : 1;
-					_currentStripe[currentStripeIndex] = std::min<DIST>({
-						_previousStripe[currentStripeIndex] + (DIST)1, 
-						_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-						_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-					});
-				}
-			}
-
-			std::swap(_currentStripe, _previousPreviousStripe);
-			std::swap(_previousStripe, _previousPreviousStripe);
-		}
-
-		for(; i < iterCount; ++i) {
-
-			std::tie(currentStripeStart, currentStripeEnd) = getCurrentStripeRange(a.size(), b.size(), i, currentStripeStart, currentStripeEnd);
-			bool lastTriangle = i >= b.size();
-			if (!lastTriangle) {
-				_currentStripe[0] = i + 2;
-				_currentStripe[currentStripeEnd] = _currentStripe[0];
-			}
-
-			for(std::size_t currentStripeIndex = currentStripeStart; currentStripeIndex < currentStripeEnd; ++currentStripeIndex) {
-				C aChar = 0;
-				if (lastTriangle) {
-					aChar = a[a.size() - (currentStripeIndex - currentStripeStart + 1)];
-				} else {
-					aChar = a[currentStripeEnd - currentStripeIndex - 1];
-				}
-
-				DIST substitutionCost = (b[currentStripeIndex - 1] == aChar) ? 0 : 1;
-				_currentStripe[currentStripeIndex] = std::min<DIST>({
-					_previousStripe[currentStripeIndex] + (DIST)1, 
-					_previousStripe[currentStripeIndex - 1] + (DIST)1,  
-					_previousPreviousStripe[currentStripeIndex - 1] + substitutionCost 
-				});
-			}
-
-			std::swap(_currentStripe, _previousPreviousStripe);
-			std::swap(_previousStripe, _previousPreviousStripe);
-		}
-		return _previousStripe[currentStripeStart];
-	}
-
 };
-
 
 #endif
