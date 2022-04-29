@@ -1,0 +1,7 @@
+#!/bin/bash
+while true
+do
+    echo -en "  \r"
+    squeue | grep "hrubykr" | tr -d '\n'
+    sleep 1
+done

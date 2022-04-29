@@ -1,17 +1,15 @@
 #!/bin/bash
-## #SBATCH --time=0:30:00 -N 6 -c 16 -p mpi-homo-short --mem 101G
-#SBATCH --time=0:30:00 -p mpi-homo-short --mem 1G
+#SBATCH --time=0:30:00 -N 8 -c 64 -p mpi-homo-short --mem 101G
 
 # Run an example non-interactive Spark computation. Requires three arguments:
 #
 #   1. Image directory
 #   2. High-speed network interface name
 #   3. R/W directory
-#   4. Application
 #
 # Example:
 #
-#   $ sbatch spark-slurm.sh /mnt/home/_teaching/para/spark eno1 ~ /mnt/1/spark/myapp.py 
+#   $ sbatch spark-slurm.sh /mnt/home/_teaching/para/spark eno1 ~
 #
 # Spark configuration will be generated in ~/slurm-$SLURM_JOB_ID.spark; any
 # configuration already there will be clobbered.
@@ -26,7 +24,7 @@ fi
 img=$1
 dev=$2
 rwdir=$3
-app=$4
+app="/mnt/1/solution.py"
 conf=${HOME}/slurm-${SLURM_JOB_ID}.spark
 
 # What IP address to use for master?
@@ -44,7 +42,7 @@ else
     exit 1
 fi
 
-tmpdir="$HOME/spark/log"
+tmpdir="${TMPDIR}"
 tmpdir_cont="/mnt/2"
 rwdir_cont="/mnt/1"
 conf_cont="/mnt/0"
@@ -76,7 +74,7 @@ tail -7 $tmpdir/log/*master*.out
 grep -Fq 'New state: ALIVE' $tmpdir/log/*master*.out
 
 # Start the Spark workers
-srun --mem 1G sh -c "  ch-run -b '${conf}:${conf_cont}' -b '${rwdir}:${rwdir_cont}' -b '${tmpdir}:${tmpdir_cont}' '${img}' -- \
+srun --mem 101G sh -c "  ch-run -b '${conf}:${conf_cont}' -b '${rwdir}:${rwdir_cont}' -b '${tmpdir}:${tmpdir_cont}' '${img}' -- \
                       /opt/spark/sbin/start-slave.sh ${master_url} \
             && sleep infinity" &
 sleep 10
@@ -87,5 +85,5 @@ ch-run -b "$conf:${conf_cont}" -b "$rwdir:${rwdir_cont}" -b "$tmpdir:${tmpdir_co
        /opt/spark/bin/spark-submit --master "$master_url" \
        --executor-memory=24G \
        --executor-cores=4 \
-       "$app"
+       "$app" 
 # Let Slurm kill the workers and master
