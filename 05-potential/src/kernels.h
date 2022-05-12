@@ -6,6 +6,9 @@
 #include <sstream>
 #include <cstdint>
 
+#include <data.hpp>
+#include <algorithm>
+#include <cassert>
 
 /**
  * A stream exception that is base for all runtime errors.
@@ -55,14 +58,16 @@ inline void _cuda_check(cudaError_t status, int line, const char *srcFile, const
  */
 #define CUCH(status) _cuda_check(status, __LINE__, __FILE__, #status)
 
+void run_add_repulsive_forces_kernel(Point<double>* points, ModelParameters<double>* mParams, std::uint32_t pointsSize, Point<double>* forces);
 
+void run_add_compulsive_forces_kernel(std::uint32_t edgesSize, Point<double>* points, Edge<std::uint32_t>* edges, std::uint32_t* lengths,
+									  ModelParameters<double>* mParams, Point<double>* forces);
 
-/*
- * Kernel wrapper declarations.
- */
+// void run_add_compulsive_forces_kernel2(std::uint32_t pointsSize, Point<double>* points, Edge<std::uint32_t>* edges, std::uint32_t* lengths,
+// 									  ModelParameters<double>* mParams, std::uint32_t** neighbourEdges, std::uint32_t* neighbourEdgesSizes, Point<double>* forces);
 
-void run_my_kernel(float *src);
-
-
+void run_apply_forces_kernel(Point<double>* forces, ModelParameters<double>* mParams, double fact, std::uint32_t pointsSize,
+							 std::uint32_t** neighbourEdges, std::uint32_t* neighbourEdgesSizes, Edge<std::uint32_t>* edges,
+							 std::uint32_t* lengths, Point<double>* velocities, Point<double>* points);
 
 #endif
