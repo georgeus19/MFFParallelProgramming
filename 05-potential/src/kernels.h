@@ -66,8 +66,7 @@ void run_add_compulsive_forces_kernel(std::uint32_t edgesSize, Point<double>* po
 // void run_add_compulsive_forces_kernel2(std::uint32_t pointsSize, Point<double>* points, Edge<std::uint32_t>* edges, std::uint32_t* lengths,
 // 									  ModelParameters<double>* mParams, std::uint32_t** neighbourEdges, std::uint32_t* neighbourEdgesSizes, Point<double>* forces);
 
-void run_apply_forces_kernel(Point<double>* forces, ModelParameters<double>* mParams, double fact, std::uint32_t pointsSize,
-							 std::uint32_t** neighbourEdges, std::uint32_t* neighbourEdgesSizes, Edge<std::uint32_t>* edges,
-							 std::uint32_t* lengths, Point<double>* velocities, Point<double>* points);
+void run_apply_forces_kernel(std::uint32_t pointsSize, Point<double>* forces, ModelParameters<double>* mParams,
+							 double fact, Point<double>* velocities, Point<double>* points);
 
 #endif

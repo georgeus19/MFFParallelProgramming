@@ -32,8 +32,6 @@ private:
 	length_t* _cuLengths = nullptr;
 	point_t* _cuVelocities = nullptr;
 	point_t* _cuForces = nullptr;
-	index_t** _cuNeighbourEdges = nullptr;
-	index_t* _cuNeighbourEdgesSizes = nullptr;
 
 	ModelParameters<real_t>* _cuModelParams = nullptr;
 
@@ -91,13 +89,11 @@ public:
 		CUCH(cudaGetLastError());
 
 		real_t fact = mParams.timeQuantum / mParams.vertexMass;
-		run_apply_forces_kernel(_cuForces, _cuModelParams, fact, _pointsSize, _cuNeighbourEdges, _cuNeighbourEdgesSizes, _cuEdges, _cuLengths, _cuVelocities, _cuPoints);
+		run_apply_forces_kernel(_pointsSize, _cuForces, _cuModelParams, fact, _cuVelocities, _cuPoints);
 		CUCH(cudaGetLastError());
 
 		CUCH(cudaDeviceSynchronize());
 		CUCH(cudaMemcpy(points.data(), _cuPoints, points.size() * sizeof(point_t), cudaMemcpyDeviceToHost));
-
-
 	}
 
 
@@ -113,28 +109,3 @@ public:
 
 
 #endif
-
-		// std::vector<std::vector<index_t>> neighbourEdges(points, std::vector<index_t>{});
-		// for (std::uint32_t i = 0; i < edges.size(); ++i) {
-		// 	neighbourEdges[edges[i].p1].push_back(i);
-		// 	neighbourEdges[edges[i].p2].push_back(i);
-		// }
-
-		// std::vector<index_t*> cuNeighbourEdges( neighbourEdges.size(), nullptr);
-		// for (std::uint32_t i = 0; i < neighbourEdges.size(); ++i) {
-		// 	index_t* cuNe = nullptr; 
-		// 	if (neighbourEdges[i].size() > 0) {
-		// 		CUCH(cudaMalloc((void**)&cuNe, neighbourEdges[i].size() * sizeof(index_t)));
-		// 		CUCH(cudaMemcpy(cuNe, neighbourEdges[i].data(), neighbourEdges[i].size() * sizeof(index_t), cudaMemcpyHostToDevice));
-		// 		cuNeighbourEdges[i] = cuNe;
-		// 	}
-		// }
-		// CUCH(cudaMalloc((void**)&_cuNeighbourEdges, cuNeighbourEdges.size() * sizeof(index_t*)));
-		// CUCH(cudaMemcpy(_cuNeighbourEdges, cuNeighbourEdges.data(), cuNeighbourEdges.size() * sizeof(index_t*), cudaMemcpyHostToDevice));
-
-		// std::vector<index_t> neighbourEdgeSizes(neighbourEdges.size(), 0);
-		// for (std::uint32_t i = 0; i < neighbourEdges.size(); ++i) {
-		// 	neighbourEdgeSizes[i] = neighbourEdges[i].size();
-		// }
-		// CUCH(cudaMalloc((void**)&_cuNeighbourEdgesSizes, neighbourEdgeSizes.size() * sizeof(index_t)));
-		// CUCH(cudaMemcpy(_cuNeighbourEdgesSizes, neighbourEdgeSizes.data(), neighbourEdgeSizes.size() * sizeof(index_t), cudaMemcpyHostToDevice));
